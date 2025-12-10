@@ -183,7 +183,7 @@ jobs:
       - name: Deploy or Update Spoke B
         run: |
           TGW_ID=${{ needs.deploy-hub.outputs.tgw_id }}
-          STACKSET="hub-networking"
+          STACKSET="Spoke-Centralized"
           ACCOUNT=${{ env.SPOKE_B_ACCOUNT_ID }}
           REGION=${{ env.AWS_REGION }}
 
