@@ -15,7 +15,6 @@ env:
   HUB_ACCOUNT_ID: "881490088884"
   SPOKE_A_ACCOUNT_ID: "414329322210"
   SPOKE_B_ACCOUNT_ID: "417371242369"
-  EXECUTION_ROLE: "AWSCloudFormationStackSetExecutionRoleSumanth"
 
 jobs:
   deploy-hub:
@@ -26,7 +25,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials (Access Keys)
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -41,14 +40,14 @@ jobs:
             --template-file cloudformation/hub/centralized-vpc.yaml \
             --capabilities CAPABILITY_NAMED_IAM CAPABILITY_IAM \
             --parameter-overrides \
-                EnvironmentName=Hub \
-                VpcCIDR=10.0.0.0/16 \
-                PublicSubnet1CIDR=10.0.1.0/24 \
-                PublicSubnet2CIDR=10.0.2.0/24 \
-                PrivateSubnet1CIDR=10.0.11.0/24 \
-                PrivateSubnet2CIDR=10.0.12.0/24 \
-                SpokeACIDR=10.1.0.0/16 \
-                SpokeBCIDR=10.2.0.0/16 \
+              EnvironmentName=Hub \
+              VpcCIDR=10.0.0.0/16 \
+              PublicSubnet1CIDR=10.0.1.0/24 \
+              PublicSubnet2CIDR=10.0.2.0/24 \
+              PrivateSubnet1CIDR=10.0.11.0/24 \
+              PrivateSubnet2CIDR=10.0.12.0/24 \
+              SpokeACIDR=10.1.0.0/16 \
+              SpokeBCIDR=10.2.0.0/16 \
             --no-fail-on-empty-changeset \
             --region ${{ env.AWS_REGION }}
 
@@ -59,7 +58,7 @@ jobs:
             --stack-name hub-networking \
             --query "Stacks[0].Outputs[?OutputKey=='TransitGatewayId'].OutputValue" \
             --output text \
-            --region ${{ env.AWS_REGION }} )
+            --region ${{ env.AWS_REGION }})
 
           echo "tgw_id=$TGW_ID" >> $GITHUB_OUTPUT
           echo "Transit Gateway ID: $TGW_ID"
@@ -76,7 +75,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configure AWS Credentials (Access Keys)
+      - name: Configure AWS Credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
           aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
@@ -88,23 +87,34 @@ jobs:
       ###############################################################
       - name: Create or Update StackSet
         run: |
-          STACKSET="centralized-spoke-vpc-2"
+          STACKSET="spoke-vpc-stackset"
 
           if aws cloudformation describe-stack-set --stack-set-name "$STACKSET" >/dev/null 2>&1; then
             echo "Updating StackSet..."
+
             aws cloudformation update-stack-set \
               --stack-set-name "$STACKSET" \
               --template-body file://cloudformation/spoke/spoke-vpc.yaml \
-              --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+              --capabilities CAPABILITY_NAMED_IAM \
+              --parameters \
+                ParameterKey=EnvironmentName,ParameterValue=Init \
+                ParameterKey=VpcCIDR,ParameterValue=0.0.0.0/0 \
+                ParameterKey=PublicSubnetCIDR,ParameterValue=0.0.0.0/0 \
+                ParameterKey=PrivateSubnetCIDR,ParameterValue=0.0.0.0/0 \
+                ParameterKey=TransitGatewayId,ParameterValue=dummy \
+                ParameterKey=HubVpcCIDR,ParameterValue=0.0.0.0/0 \
+                ParameterKey=OtherSpokeCIDR,ParameterValue=0.0.0.0/0 \
               --region ${{ env.AWS_REGION }}
 
           else
-            echo "Creating StackSet with placeholder parameters..."
+            echo "Creating StackSet..."
+
             aws cloudformation create-stack-set \
               --stack-set-name "$STACKSET" \
               --template-body file://cloudformation/spoke/spoke-vpc.yaml \
               --administration-role-arn arn:aws:iam::${{ env.HUB_ACCOUNT_ID }}:role/AWSCloudFormationStackSetAdministrationRole \
-              --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
+              --execution-role-name AWSCloudFormationStackSetExecutionRole \
+              --capabilities CAPABILITY_NAMED_IAM \
               --parameters \
                 ParameterKey=EnvironmentName,ParameterValue=Init \
                 ParameterKey=VpcCIDR,ParameterValue=0.0.0.0/0 \
@@ -117,24 +127,21 @@ jobs:
           fi
 
       ###############################################################
-      # FUNCTION: CREATE/UPDATE SPOKE INSTANCES
+      # SPOKE A
       ###############################################################
-
       - name: Deploy or Update Spoke A
         run: |
           TGW_ID=${{ needs.deploy-hub.outputs.tgw_id }}
           STACKSET="spoke-vpc-stackset"
           ACCOUNT=${{ env.SPOKE_A_ACCOUNT_ID }}
           REGION=${{ env.AWS_REGION }}
-          ROLE=${{ env.EXECUTION_ROLE }}
 
-          echo "Checking if Spoke A instance exists..."
+          echo "Checking if Spoke A exists..."
 
           if aws cloudformation list-stack-instances \
-                --stack-set-name $STACKSET \
-                --region $REGION \
-                --query "Summaries[?Account=='$ACCOUNT' && Region=='$REGION']" \
-                | grep -q "$ACCOUNT"; then
+            --stack-set-name $STACKSET \
+            --region $REGION \
+            --query "Summaries[?Account=='$ACCOUNT']" | grep -q "$ACCOUNT"; then
 
             echo "Updating Spoke A..."
             aws cloudformation update-stack-instances \
@@ -170,21 +177,22 @@ jobs:
               --region $REGION
           fi
 
+      ###############################################################
+      # SPOKE B
+      ###############################################################
       - name: Deploy or Update Spoke B
         run: |
           TGW_ID=${{ needs.deploy-hub.outputs.tgw_id }}
           STACKSET="spoke-vpc-stackset"
           ACCOUNT=${{ env.SPOKE_B_ACCOUNT_ID }}
           REGION=${{ env.AWS_REGION }}
-          ROLE=${{ env.EXECUTION_ROLE }}
 
-          echo "Checking if Spoke B instance exists..."
+          echo "Checking if Spoke B exists..."
 
           if aws cloudformation list-stack-instances \
-                --stack-set-name $STACKSET \
-                --region $REGION \
-                --query "Summaries[?Account=='$ACCOUNT' && Region=='$REGION']" \
-                | grep -q "$ACCOUNT"; then
+            --stack-set-name $STACKSET \
+            --region $REGION \
+            --query "Summaries[?Account=='$ACCOUNT']" | grep -q "$ACCOUNT"; then
 
             echo "Updating Spoke B..."
             aws cloudformation update-stack-instances \
