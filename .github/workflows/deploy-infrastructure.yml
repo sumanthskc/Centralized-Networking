@@ -88,7 +88,7 @@ jobs:
       ###############################################################
       - name: Create or Update StackSet
         run: |
-          STACKSET="spoke-vpc-stackset"
+          STACKSET="centralized-spoke-vpc"
 
           if aws cloudformation describe-stack-set --stack-set-name "$STACKSET" >/dev/null 2>&1; then
             echo "Updating StackSet..."
