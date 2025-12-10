@@ -191,7 +191,6 @@ jobs:
               --stack-set-name $STACKSET \
               --accounts $ACCOUNT \
               --regions $REGION \
-              --execution-role-name $ROLE \
               --parameter-overrides \
                 ParameterKey=EnvironmentName,ParameterValue=SpokeB \
                 ParameterKey=VpcCIDR,ParameterValue=10.2.0.0/16 \
@@ -209,7 +208,6 @@ jobs:
               --stack-set-name $STACKSET \
               --accounts $ACCOUNT \
               --regions $REGION \
-              --execution-role-name $ROLE \
               --parameter-overrides \
                 ParameterKey=EnvironmentName,ParameterValue=SpokeB \
                 ParameterKey=VpcCIDR,ParameterValue=10.2.0.0/16 \
