@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 env:
-  AWS_REGION: "us-west-1"     # UPDATED REGION: NORTHERN CALIFORNIA
+  AWS_REGION: "us-west-1"
   HUB_ACCOUNT_ID: "881490088884"
   SPOKE_A_ACCOUNT_ID: "414329322210"
   SPOKE_B_ACCOUNT_ID: "417371242369"
@@ -21,20 +21,16 @@ jobs:
     name: Deploy Hub Infrastructure (VPC + TGW)
     runs-on: ubuntu-latest
 
-    permissions:
-      id-token: write
-      contents: read
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configure AWS OIDC Credentials (Hub)
+      - name: Configure AWS Credentials (Access Keys)
         uses: aws-actions/configure-aws-credentials@v4
         with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: arn:aws:iam::881490088884:role/GitHubOIDCDeploymentRole
-          role-session-name: GitHub-HubDeployment
 
       - name: Deploy Hub VPC + TGW
         run: |
@@ -74,21 +70,20 @@ jobs:
     runs-on: ubuntu-latest
     needs: deploy-hub
 
-    permissions:
-      id-token: write
-      contents: read
-
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Configure AWS OIDC Credentials (Hub)
+      - name: Configure AWS Credentials (Access Keys)
         uses: aws-actions/configure-aws-credentials@v4
         with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
-          role-to-assume: arn:aws:iam::881490088884:role/GitHubOIDCDeploymentRole
-          role-session-name: GitHub-StackSetDeployment
 
+      ##########################################
+      # CREATE / UPDATE STACKSET
+      ##########################################
       - name: Create or Update StackSet
         run: |
           TGW_ID=${{ needs.deploy-hub.outputs.tgw_id }}
@@ -106,12 +101,15 @@ jobs:
             aws cloudformation create-stack-set \
               --stack-set-name "$STACKSET_NAME" \
               --template-body file://cloudformation/spoke/spoke-vpc.yaml \
-              --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
               --administration-role-arn arn:aws:iam::${{ env.HUB_ACCOUNT_ID }}:role/AWSCloudFormationStackSetAdministrationRole \
               --execution-role-name AWSCloudFormationStackSetExecutionRole \
+              --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
               --region ${{ env.AWS_REGION }}
           fi
 
+      ##########################################
+      # DEPLOY SPOKE A
+      ##########################################
       - name: Deploy Spoke A Stack Instance
         run: |
           TGW_ID=${{ needs.deploy-hub.outputs.tgw_id }}
@@ -131,6 +129,9 @@ jobs:
             --operation-preferences FailureToleranceCount=0,MaxConcurrentCount=1 \
             --region ${{ env.AWS_REGION }}
 
+      ##########################################
+      # DEPLOY SPOKE B
+      ##########################################
       - name: Deploy Spoke B Stack Instance
         run: |
           TGW_ID=${{ needs.deploy-hub.outputs.tgw_id }}
