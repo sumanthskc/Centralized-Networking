@@ -15,6 +15,7 @@ env:
   HUB_ACCOUNT_ID: "881490088884"
   SPOKE_A_ACCOUNT_ID: "414329322210"
   SPOKE_B_ACCOUNT_ID: "417371242369"
+  EXECUTION_ROLE: "AWSCloudFormationStackSetExecutionRoleSumanth"
 
 jobs:
   deploy-hub:
@@ -40,14 +41,14 @@ jobs:
             --template-file cloudformation/hub/centralized-vpc.yaml \
             --capabilities CAPABILITY_NAMED_IAM CAPABILITY_IAM \
             --parameter-overrides \
-              EnvironmentName=Hub \
-              VpcCIDR=10.0.0.0/16 \
-              PublicSubnet1CIDR=10.0.1.0/24 \
-              PublicSubnet2CIDR=10.0.2.0/24 \
-              PrivateSubnet1CIDR=10.0.11.0/24 \
-              PrivateSubnet2CIDR=10.0.12.0/24 \
-              SpokeACIDR=10.1.0.0/16 \
-              SpokeBCIDR=10.2.0.0/16 \
+                EnvironmentName=Hub \
+                VpcCIDR=10.0.0.0/16 \
+                PublicSubnet1CIDR=10.0.1.0/24 \
+                PublicSubnet2CIDR=10.0.2.0/24 \
+                PrivateSubnet1CIDR=10.0.11.0/24 \
+                PrivateSubnet2CIDR=10.0.12.0/24 \
+                SpokeACIDR=10.1.0.0/16 \
+                SpokeBCIDR=10.2.0.0/16 \
             --no-fail-on-empty-changeset \
             --region ${{ env.AWS_REGION }}
 
@@ -67,7 +68,7 @@ jobs:
       tgw_id: ${{ steps.tgw.outputs.tgw_id }}
 
   deploy-spokes:
-    name: Deploy StackSet + Spoke A & Spoke B VPCs
+    name: Deploy StackSet + Spoke A & B VPCs
     runs-on: ubuntu-latest
     needs: deploy-hub
 
@@ -87,24 +88,24 @@ jobs:
       ###############################################################
       - name: Create or Update StackSet
         run: |
-          STACKSET_NAME="spoke-vpc-stackset"
+          STACKSET="spoke-vpc-stackset"
 
-          if aws cloudformation describe-stack-set --stack-set-name "$STACKSET_NAME" >/dev/null 2>&1; then
-            echo "Updating existing StackSet..."
+          if aws cloudformation describe-stack-set --stack-set-name "$STACKSET" >/dev/null 2>&1; then
+            echo "Updating StackSet..."
             aws cloudformation update-stack-set \
-              --stack-set-name "$STACKSET_NAME" \
+              --stack-set-name "$STACKSET" \
               --template-body file://cloudformation/spoke/spoke-vpc.yaml \
               --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
               --region ${{ env.AWS_REGION }}
 
           else
-            echo "Creating new StackSet (with placeholder parameters)..."
+            echo "Creating StackSet with placeholder parameters..."
             aws cloudformation create-stack-set \
-              --stack-set-name "$STACKSET_NAME" \
+              --stack-set-name "$STACKSET" \
               --template-body file://cloudformation/spoke/spoke-vpc.yaml \
-              --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
               --administration-role-arn arn:aws:iam::${{ env.HUB_ACCOUNT_ID }}:role/AWSCloudFormationStackSetAdministrationRole \
-              --execution-role-name AWSCloudFormationStackSetExecutionRole \
+              --execution-role-name ${{ env.EXECUTION_ROLE }} \
+              --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
               --parameters \
                 ParameterKey=EnvironmentName,ParameterValue=Init \
                 ParameterKey=VpcCIDR,ParameterValue=0.0.0.0/0 \
@@ -117,105 +118,111 @@ jobs:
           fi
 
       ###############################################################
-      # DEPLOY OR UPDATE SPOKE A STACK INSTANCE
+      # FUNCTION: CREATE/UPDATE SPOKE INSTANCES
       ###############################################################
-      - name: Deploy or Update Spoke A Instance
+
+      - name: Deploy or Update Spoke A
         run: |
           TGW_ID=${{ needs.deploy-hub.outputs.tgw_id }}
+          STACKSET="spoke-vpc-stackset"
           ACCOUNT=${{ env.SPOKE_A_ACCOUNT_ID }}
           REGION=${{ env.AWS_REGION }}
-          STACKSET="spoke-vpc-stackset"
+          ROLE=${{ env.EXECUTION_ROLE }}
 
           echo "Checking if Spoke A instance exists..."
 
           if aws cloudformation list-stack-instances \
-               --stack-set-name $STACKSET \
-               --query "Summaries[?Account=='$ACCOUNT' && Region=='$REGION']" \
-               --region $REGION | grep -q "$ACCOUNT"; then
-             
-             echo "Spoke A exists. Updating parameters..."
-             aws cloudformation update-stack-instances \
-               --stack-set-name $STACKSET \
-               --accounts $ACCOUNT \
-               --regions $REGION \
-               --parameter-overrides \
-                 ParameterKey=EnvironmentName,ParameterValue=SpokeA \
-                 ParameterKey=VpcCIDR,ParameterValue=10.1.0.0/16 \
-                 ParameterKey=PublicSubnetCIDR,ParameterValue=10.1.1.0/24 \
-                 ParameterKey=PrivateSubnetCIDR,ParameterValue=10.1.11.0/24 \
-                 ParameterKey=TransitGatewayId,ParameterValue=$TGW_ID \
-                 ParameterKey=HubVpcCIDR,ParameterValue=10.0.0.0/16 \
-                 ParameterKey=OtherSpokeCIDR,ParameterValue=10.2.0.0/16 \
-               --operation-preferences FailureToleranceCount=0,MaxConcurrentCount=1 \
-               --region $REGION
+                --stack-set-name $STACKSET \
+                --region $REGION \
+                --query "Summaries[?Account=='$ACCOUNT' && Region=='$REGION']" \
+                | grep -q "$ACCOUNT"; then
+
+            echo "Updating Spoke A..."
+            aws cloudformation update-stack-instances \
+              --stack-set-name $STACKSET \
+              --accounts $ACCOUNT \
+              --regions $REGION \
+              --execution-role-name $ROLE \
+              --parameter-overrides \
+                ParameterKey=EnvironmentName,ParameterValue=SpokeA \
+                ParameterKey=VpcCIDR,ParameterValue=10.1.0.0/16 \
+                ParameterKey=PublicSubnetCIDR,ParameterValue=10.1.1.0/24 \
+                ParameterKey=PrivateSubnetCIDR,ParameterValue=10.1.11.0/24 \
+                ParameterKey=TransitGatewayId,ParameterValue=$TGW_ID \
+                ParameterKey=HubVpcCIDR,ParameterValue=10.0.0.0/16 \
+                ParameterKey=OtherSpokeCIDR,ParameterValue=10.2.0.0/16 \
+              --operation-preferences FailureToleranceCount=0,MaxConcurrentCount=1 \
+              --region $REGION
 
           else
-             echo "Spoke A does not exist. Creating instance..."
-             aws cloudformation create-stack-instances \
-               --stack-set-name $STACKSET \
-               --accounts $ACCOUNT \
-               --regions $REGION \
-               --parameter-overrides \
-                 ParameterKey=EnvironmentName,ParameterValue=SpokeA \
-                 ParameterKey=VpcCIDR,ParameterValue=10.1.0.0/16 \
-                 ParameterKey=PublicSubnetCIDR,ParameterValue=10.1.1.0/24 \
-                 ParameterKey=PrivateSubnetCIDR,ParameterValue=10.1.11.0/24 \
-                 ParameterKey=TransitGatewayId,ParameterValue=$TGW_ID \
-                 ParameterKey=HubVpcCIDR,ParameterValue=10.0.0.0/16 \
-                 ParameterKey=OtherSpokeCIDR,ParameterValue=10.2.0.0/16 \
-               --operation-preferences FailureToleranceCount=0,MaxConcurrentCount=1 \
-               --region $REGION
+            echo "Creating Spoke A..."
+            aws cloudformation create-stack-instances \
+              --stack-set-name $STACKSET \
+              --accounts $ACCOUNT \
+              --regions $REGION \
+              --execution-role-name $ROLE \
+              --parameter-overrides \
+                ParameterKey=EnvironmentName,ParameterValue=SpokeA \
+                ParameterKey=VpcCIDR,ParameterValue=10.1.0.0/16 \
+                ParameterKey=PublicSubnetCIDR,ParameterValue=10.1.1.0/24 \
+                ParameterKey=PrivateSubnetCIDR,ParameterValue=10.1.11.0/24 \
+                ParameterKey=TransitGatewayId,ParameterValue=$TGW_ID \
+                ParameterKey=HubVpcCIDR,ParameterValue=10.0.0.0/16 \
+                ParameterKey=OtherSpokeCIDR,ParameterValue=10.2.0.0/16 \
+              --operation-preferences FailureToleranceCount=0,MaxConcurrentCount=1 \
+              --region $REGION
           fi
 
-      ###############################################################
-      # DEPLOY OR UPDATE SPOKE B STACK INSTANCE
-      ###############################################################
-      - name: Deploy or Update Spoke B Instance
+      - name: Deploy or Update Spoke B
         run: |
           TGW_ID=${{ needs.deploy-hub.outputs.tgw_id }}
+          STACKSET="spoke-vpc-stackset"
           ACCOUNT=${{ env.SPOKE_B_ACCOUNT_ID }}
           REGION=${{ env.AWS_REGION }}
-          STACKSET="spoke-vpc-stackset"
+          ROLE=${{ env.EXECUTION_ROLE }}
 
           echo "Checking if Spoke B instance exists..."
 
           if aws cloudformation list-stack-instances \
-               --stack-set-name $STACKSET \
-               --query "Summaries[?Account=='$ACCOUNT' && Region=='$REGION']" \
-               --region $REGION | grep -q "$ACCOUNT"; then
+                --stack-set-name $STACKSET \
+                --region $REGION \
+                --query "Summaries[?Account=='$ACCOUNT' && Region=='$REGION']" \
+                | grep -q "$ACCOUNT"; then
 
-             echo "Spoke B exists. Updating parameters..."
-             aws cloudformation update-stack-instances \
-               --stack-set-name $STACKSET \
-               --accounts $ACCOUNT \
-               --regions $REGION \
-               --parameter-overrides \
-                 ParameterKey=EnvironmentName,ParameterValue=SpokeB \
-                 ParameterKey=VpcCIDR,ParameterValue=10.2.0.0/16 \
-                 ParameterKey=PublicSubnetCIDR,ParameterValue=10.2.1.0/24 \
-                 ParameterKey=PrivateSubnetCIDR,ParameterValue=10.2.11.0/24 \
-                 ParameterKey=TransitGatewayId,ParameterValue=$TGW_ID \
-                 ParameterKey=HubVpcCIDR,ParameterValue=10.0.0.0/16 \
-                 ParameterKey=OtherSpokeCIDR,ParameterValue=10.1.0.0/16 \
-               --operation-preferences FailureToleranceCount=0,MaxConcurrentCount=1 \
-               --region $REGION
+            echo "Updating Spoke B..."
+            aws cloudformation update-stack-instances \
+              --stack-set-name $STACKSET \
+              --accounts $ACCOUNT \
+              --regions $REGION \
+              --execution-role-name $ROLE \
+              --parameter-overrides \
+                ParameterKey=EnvironmentName,ParameterValue=SpokeB \
+                ParameterKey=VpcCIDR,ParameterValue=10.2.0.0/16 \
+                ParameterKey=PublicSubnetCIDR,ParameterValue=10.2.1.0/24 \
+                ParameterKey=PrivateSubnetCIDR,ParameterValue=10.2.11.0/24 \
+                ParameterKey=TransitGatewayId,ParameterValue=$TGW_ID \
+                ParameterKey=HubVpcCIDR,ParameterValue=10.0.0.0/16 \
+                ParameterKey=OtherSpokeCIDR,ParameterValue=10.1.0.0/16 \
+              --operation-preferences FailureToleranceCount=0,MaxConcurrentCount=1 \
+              --region $REGION
 
           else
-             echo "Spoke B does not exist. Creating instance..."
-             aws cloudformation create-stack-instances \
-               --stack-set-name $STACKSET \
-               --accounts $ACCOUNT \
-               --regions $REGION \
-               --parameter-overrides \
-                 ParameterKey=EnvironmentName,ParameterValue=SpokeB \
-                 ParameterKey=VpcCIDR,ParameterValue=10.2.0.0/16 \
-                 ParameterKey=PublicSubnetCIDR,ParameterValue=10.2.1.0/24 \
-                 ParameterKey=PrivateSubnetCIDR,ParameterValue=10.2.11.0/24 \
-                 ParameterKey=TransitGatewayId,ParameterValue=$TGW_ID \
-                 ParameterKey=HubVpcCIDR,ParameterValue=10.0.0.0/16 \
-                 ParameterKey=OtherSpokeCIDR,ParameterValue=10.1.0.0/16 \
-               --operation-preferences FailureToleranceCount=0,MaxConcurrentCount=1 \
-               --region $REGION
+            echo "Creating Spoke B..."
+            aws cloudformation create-stack-instances \
+              --stack-set-name $STACKSET \
+              --accounts $ACCOUNT \
+              --regions $REGION \
+              --execution-role-name $ROLE \
+              --parameter-overrides \
+                ParameterKey=EnvironmentName,ParameterValue=SpokeB \
+                ParameterKey=VpcCIDR,ParameterValue=10.2.0.0/16 \
+                ParameterKey=PublicSubnetCIDR,ParameterValue=10.2.1.0/24 \
+                ParameterKey=PrivateSubnetCIDR,ParameterValue=10.2.11.0/24 \
+                ParameterKey=TransitGatewayId,ParameterValue=$TGW_ID \
+                ParameterKey=HubVpcCIDR,ParameterValue=10.0.0.0/16 \
+                ParameterKey=OtherSpokeCIDR,ParameterValue=10.1.0.0/16 \
+              --operation-preferences FailureToleranceCount=0,MaxConcurrentCount=1 \
+              --region $REGION
           fi
 
       - name: Deployment Complete
