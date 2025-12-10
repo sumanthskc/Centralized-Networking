@@ -88,7 +88,7 @@ jobs:
       ###############################################################
       - name: Create or Update StackSet
         run: |
-          STACKSET="centralized-spoke-vpc"
+          STACKSET="centralized-spoke-vpc-2"
 
           if aws cloudformation describe-stack-set --stack-set-name "$STACKSET" >/dev/null 2>&1; then
             echo "Updating StackSet..."
@@ -104,7 +104,6 @@ jobs:
               --stack-set-name "$STACKSET" \
               --template-body file://cloudformation/spoke/spoke-vpc.yaml \
               --administration-role-arn arn:aws:iam::${{ env.HUB_ACCOUNT_ID }}:role/AWSCloudFormationStackSetAdministrationRole \
-              --execution-role-name ${{ env.EXECUTION_ROLE }} \
               --capabilities CAPABILITY_IAM CAPABILITY_NAMED_IAM \
               --parameters \
                 ParameterKey=EnvironmentName,ParameterValue=Init \
@@ -142,7 +141,6 @@ jobs:
               --stack-set-name $STACKSET \
               --accounts $ACCOUNT \
               --regions $REGION \
-              --execution-role-name $ROLE \
               --parameter-overrides \
                 ParameterKey=EnvironmentName,ParameterValue=SpokeA \
                 ParameterKey=VpcCIDR,ParameterValue=10.1.0.0/16 \
@@ -160,7 +158,6 @@ jobs:
               --stack-set-name $STACKSET \
               --accounts $ACCOUNT \
               --regions $REGION \
-              --execution-role-name $ROLE \
               --parameter-overrides \
                 ParameterKey=EnvironmentName,ParameterValue=SpokeA \
                 ParameterKey=VpcCIDR,ParameterValue=10.1.0.0/16 \
