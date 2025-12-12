@@ -113,7 +113,7 @@ jobs:
               --stack-set-name "$STACKSET" \
               --template-body file://cloudformation/spoke/spoke-vpc.yaml \
               --administration-role-arn arn:aws:iam::${{ env.HUB_ACCOUNT_ID }}:role/AWSCloudFormationStackSetAdministrationRole \
-              --execution-role-name AWSCloudFormationStackSetExecutionRole \
+              --execution-role-name AWSCloudFormationStackSetExecutionRoleSumanth \
               --capabilities CAPABILITY_NAMED_IAM \
               --parameters \
                 ParameterKey=EnvironmentName,ParameterValue=Init \
@@ -132,7 +132,7 @@ jobs:
       - name: Deploy or Update Spoke A
         run: |
           TGW_ID=${{ needs.deploy-hub.outputs.tgw_id }}
-          STACKSET="spoke-vpc-stackset"
+          STACKSET="Spoke-Centralized"
           ACCOUNT=${{ env.SPOKE_A_ACCOUNT_ID }}
           REGION=${{ env.AWS_REGION }}
 
@@ -156,7 +156,7 @@ jobs:
                 ParameterKey=TransitGatewayId,ParameterValue=$TGW_ID \
                 ParameterKey=HubVpcCIDR,ParameterValue=10.0.0.0/16 \
                 ParameterKey=OtherSpokeCIDR,ParameterValue=10.2.0.0/16 \
-              --operation-preferences FailureToleranceCount=0,MaxConcurrentCount=1 \
+              --operation-preferences FailureToleranceCount=1,MaxConcurrentCount=2 \
               --region $REGION
 
           else
@@ -173,7 +173,7 @@ jobs:
                 ParameterKey=TransitGatewayId,ParameterValue=$TGW_ID \
                 ParameterKey=HubVpcCIDR,ParameterValue=10.0.0.0/16 \
                 ParameterKey=OtherSpokeCIDR,ParameterValue=10.2.0.0/16 \
-              --operation-preferences FailureToleranceCount=0,MaxConcurrentCount=1 \
+              --operation-preferences FailureToleranceCount=1,MaxConcurrentCount=2 \
               --region $REGION
           fi
 
@@ -207,7 +207,7 @@ jobs:
                 ParameterKey=TransitGatewayId,ParameterValue=$TGW_ID \
                 ParameterKey=HubVpcCIDR,ParameterValue=10.0.0.0/16 \
                 ParameterKey=OtherSpokeCIDR,ParameterValue=10.1.0.0/16 \
-              --operation-preferences FailureToleranceCount=0,MaxConcurrentCount=1 \
+              --operation-preferences FailureToleranceCount=1,MaxConcurrentCount=2 \
               --region $REGION
 
           else
@@ -224,7 +224,7 @@ jobs:
                 ParameterKey=TransitGatewayId,ParameterValue=$TGW_ID \
                 ParameterKey=HubVpcCIDR,ParameterValue=10.0.0.0/16 \
                 ParameterKey=OtherSpokeCIDR,ParameterValue=10.1.0.0/16 \
-              --operation-preferences FailureToleranceCount=0,MaxConcurrentCount=1 \
+              --operation-preferences FailureToleranceCount=1,MaxConcurrentCount=2 \
               --region $REGION
           fi
 
